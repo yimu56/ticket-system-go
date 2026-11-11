@@ -1,0 +1,167 @@
+# 工单管理系统（Go 版）
+
+> 当前版本：**v1.0.0** ｜ 许可证：[MIT](./LICENSE) ｜ 变更记录：[CHANGELOG.md](./CHANGELOG.md)
+
+原 PyQt5 + SQLAlchemy 版本的重构实现：**纯 Go、免 CGO、双击即用的单文件 exe**，
+界面改为内嵌 Web UI（启动后自动打开默认浏览器），**数据库结构 100% 兼容旧版 `ticket.db`**，
+可以直接接管原有数据，也能随时回退到 Python 版。
+
+---
+
+## 功能
+
+| 功能 | 说明 |
+|---|---|
+| 工单列表 | 12 列信息、交替行色、状态色标、悬停显示完整内容 |
+| 新建 / 编辑 | 全字段编辑（客户、联系人、电话、类型、描述、记录、上升、闭环、日期） |
+| 处理记录 | 双击「处理记录」列直接编辑，支持一键复制全部 |
+| 单号自动生成 | 交付 `JF-YYYYMMDD-NN`、测试 `CS-YYYYMMDD-NN` 按当天序号递增；售后留空手填 |
+| 行内开关 | 点击「上升」「闭环」即时切换并落库 |
+| 搜索 | 单号 / 客户 / 联系人 / 电话 / 问题描述 五字段模糊匹配 |
+| 筛选 | 隐藏已闭环、按项目类型、按状态（未闭环 / 已闭环 / 已上升） |
+| 排序 | 点击表头按单号、客户、类型、时间、状态排序 |
+| 状态推导 | 已闭环 > 已上升 > 新工单 > 处理中(超时) > 处理中，超时阈值 7 天 |
+| 批量操作 | 多选删除（需二次确认）、批量导出 |
+| 导出 | TXT（原版版式）/ CSV（带 BOM，Excel 直接打开不乱码） |
+| 快捷键 | `Ctrl+N` 新建、`Ctrl+E` 导出、`Ctrl+F` 搜索、`F5` 刷新、`Del` 删除 |
+
+## 快速开始
+
+### 直接运行
+
+```
+ticket-system.exe
+```
+
+首次运行会在 **exe 所在目录** 生成：
+
+- `ticket.db` —— SQLite 数据库（与 Python 版同构）
+- `ticket_system.log` —— 运行日志，超过 5MB 自动轮转为 `.log.1`
+
+### 接管旧数据
+
+把原来 Python 目录下的 `ticket.db` 复制到 exe 同目录即可，无需任何迁移脚本。
+已验证可正确读取旧版的微秒级时间戳和 `0/1` 布尔值。
+
+也可以显式指定数据库位置：
+
+```bat
+ticket-system.exe -db "D:\工单数据\ticket.db"
+```
+
+### 命令行参数
+
+| 参数 | 说明 |
+|---|---|
+| `-db <path>` | 数据库路径，默认 `exe 目录/ticket.db` |
+| `-port <n>` | 固定端口，默认自动选空闲端口 |
+| `-no-open` | 启动后不自动打开浏览器（服务器 / 调试用） |
+| `-dev` | 开发模式：日志输出到控制台，不写文件 |
+| `-v` | 显示版本号与构建信息，例如 `v1.0.0 (windows/amd64, commit a1b2c3d, built 2026-11-11_18:59)` |
+
+## 版本号
+
+版本号单一来源是根目录的 **`VERSION`** 文件（当前 `1.0.0`），遵循
+[语义化版本](https://semver.org/lang/zh-CN/)：不兼容变更升 MAJOR、新增功能升 MINOR、修 bug 升 PATCH。
+
+`build.bat` 会自动读取 `VERSION`、抓取 `git` 提交短哈希和构建时间，通过 `-ldflags` 注入二进制。
+版本号在三个地方可见：
+
+- `ticket-system.exe -v` 命令行输出
+- 启动日志首行
+- 界面右下角状态栏
+
+手动构建时注入方式：
+
+```bat
+go build -trimpath -ldflags "-s -w -X main.Version=1.0.0 -X main.Commit=dev -X main.BuildTime=2026-11-11" -o ticket-system.exe .
+```
+
+发版流程：改 `VERSION` → 在 `CHANGELOG.md` 顶部加一节 → 跑 `build.bat`。
+
+## 从源码构建
+
+需要 Go 1.21 以上。
+
+```bat
+build.bat
+```
+
+脚本会依次执行 `go mod tidy` → `go test ./...` → `go build`（`CGO_ENABLED=0`，
+产物约 16MB，无任何外部 DLL 依赖）。
+
+手动构建：
+
+```bat
+set CGO_ENABLED=0
+go build -trimpath -ldflags "-s -w" -o ticket-system.exe .
+```
+
+## 项目结构
+
+```
+ticket-go/
+├─ main.go                    启动、参数解析、日志、浏览器拉起
+├─ version.go                 版本号与构建元信息（-ldflags 注入）
+├─ platform_windows.go        Win32 错误弹窗 / rundll32 打开浏览器 / 控制台探测
+├─ platform_other.go          macOS、Linux 适配
+├─ internal/
+│  ├─ store/
+│  │  ├─ store.go             数据访问：SQL 下推、事务、单号生成、统计
+│  │  └─ store_test.go        单测（CRUD / 过滤 / 单号 / 状态 / 旧库兼容）
+│  ├─ server/
+│  │  ├─ server.go            REST 路由、参数校验、错误映射
+│  │  ├─ export.go            TXT / CSV 导出
+│  │  └─ server_test.go       API 集成测试
+│  └─ webui/
+│     ├─ webui.go             go:embed 打包前端
+│     └─ assets/              index.html / app.css / app.js
+└─ build.bat
+```
+
+## API
+
+全部接口仅监听 `127.0.0.1`，用于本地界面调用。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/tickets?q=&priority=&status=&hideClosed=1` | 列表（返回 total / showing / items） |
+| GET | `/api/tickets/{id}` | 单条详情 |
+| POST | `/api/tickets` | 新建 |
+| PUT | `/api/tickets/{id}` | 全量更新（不含单号、创建时间） |
+| PATCH | `/api/tickets/{id}` | 局部更新（record / rise / closed / priority 等） |
+| DELETE | `/api/tickets` | 批量删除，body `{"ids":[...]}` |
+| GET | `/api/next-id?priority=1` | 生成下一个单号，售后返回空串 |
+| GET | `/api/stats` | 概览统计 |
+| GET | `/api/export?format=csv&ids=a,b` | 导出 TXT / CSV |
+
+## 相较原版的修正
+
+重构过程中一并修掉了原 Python 版本的已知缺陷：
+
+1. **项目类型标签错位** —— `main.py` / `main2.py` 里下拉框是「交付/测试/售后」，
+   展示与筛选却用 `["高","中","低"]`，导致列表列显示错误。现统一走同一份类型常量。
+2. **新建时单号不会自动生成** —— `main5.py` 只在切换下拉框时才生成单号，
+   默认停在「售后」时输入框为空，用户容易直接报错。现打开对话框即按当前类型生成。
+3. **售后单号无人接管** —— 原版售后返回空、要求手填，但库里 `FWSL-*` 格式实际来自外部系统。
+   现在明确区分：交付/测试自动编号，售后保留手填并把历史 `FWSL-*` 原样读入。
+4. **状态筛选语义重叠** —— 「未闭环」与「已上升」会同时命中同一工单。
+   现在状态推导集中在一处，SQL 过滤条件与显示逻辑严格对应。
+5. **每次操作整表重载 + 重建全部 item** —— 改为 SQL 侧过滤 + 单行 `PATCH`，
+   改一个闭环标记不再触发全表重绘。
+6. **点击单元格反复 `setCellWidget` 造成泄漏** —— 行内开关改为轻量元素，无 widget 堆积。
+7. **删除不是单事务** —— 现在批量删除在一个事务里完成，全部成功才提交。
+8. **LIKE 通配符未转义** —— 用户输入 `%` 会匹配全表，现已转义。
+
+## 已知限制
+
+- 单机单用户工具，未做多端并发写冲突处理（SQLite 单连接串行化，本地足够）。
+- Web UI 依赖系统默认浏览器；若运行环境没有浏览器，用 `-no-open` 后手动访问打印出的地址。
+- 端口默认随机分配，每次启动地址不同；需要固定地址时加 `-port 8080`。
+- 表格 13 列在 1280 宽度下会横向滚动，这是列数决定的，非缺陷。
+
+## 许可证
+
+[MIT](./LICENSE) © 2026 yimu56
+
+可自由使用、修改、分发与商用，保留版权声明与许可声明即可。软件按「原样」提供，不含任何担保。

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工单管理系统</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E5%B7%A5%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">工</span>
+      <h1>工单管理系统</h1>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="btnNew"><span>+</span> 新建工单 <kbd>Ctrl N</kbd></button>
+      <button class="btn" id="btnExport">导出 <kbd>Ctrl E</kbd></button>
+      <button class="btn danger" id="btnDelete">删除 <kbd>Del</kbd></button>
+      <button class="btn ghost" id="btnRefresh" title="刷新 (F5)">刷新</button>
+    </div>
+  </header>
+
+  <section class="stats" id="stats"></section>
+
+  <section class="toolbar">
+    <div class="search">
+      <input type="search" id="search" placeholder="搜索单号、客户、联系人、电话或问题关键词…" autocomplete="off">
+      <button class="btn" id="btnClear">清除</button>
+    </div>
+    <div class="filters">
+      <label class="chk"><input type="checkbox" id="hideClosed"> 隐藏已闭环</label>
+      <label class="sel">项目类型
+        <select id="fPriority">
+          <option value="0">全部</option>
+          <option value="1">交付</option>
+          <option value="2">测试</option>
+          <option value="3">售后</option>
+        </select>
+      </label>
+      <label class="sel">状态
+        <select id="fStatus">
+          <option value="0">全部</option>
+          <option value="1">未闭环</option>
+          <option value="2">已闭环</option>
+          <option value="3">已上升</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <main class="tablewrap">
+    <table id="grid">
+      <thead>
+        <tr>
+          <th class="col-check"><input type="checkbox" id="checkAll" title="全选"></th>
+          <th data-sort="ticketId">单号</th>
+          <th data-sort="clientName">客户名称</th>
+          <th>联系人</th>
+          <th>联系方式</th>
+          <th>问题描述</th>
+          <th>处理记录</th>
+          <th data-sort="priority">项目类型</th>
+          <th>上升</th>
+          <th>闭环</th>
+          <th data-sort="createdAt">创建时间</th>
+          <th data-sort="updatedAt">最后处理</th>
+          <th data-sort="status">状态</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty" id="empty" hidden>没有匹配的工单</div>
+  </main>
+
+  <footer class="statusbar">
+    <span id="statusText">就绪</span>
+    <span class="spacer"></span>
+    <span id="dbInfo"></span>
+    <span id="verInfo" class="ver"></span>
+  </footer>
+</div>
+
+<!-- 新建 / 编辑工单（novalidate：由脚本统一校验并给出中文提示） -->
+<dialog id="dlgTicket" class="modal">
+  <form method="dialog" id="formTicket" novalidate>
+    <h2 id="dlgTitle">新建工单</h2>
+    <div class="formgrid">
+      <div class="field mid">
+        <label for="fTicketId">单号 <b>*</b></label>
+        <input id="fTicketId" required maxlength="64">
+        <small id="idHint">交付/测试自动编号，售后需手工填写</small>
+      </div>
+      <div class="field">
+        <label for="fPriorityEdit">项目类型</label>
+        <select id="fPriorityEdit">
+          <option value="1">交付</option>
+          <option value="2">测试</option>
+          <option value="3">售后</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="fClient">客户名称 <b>*</b></label>
+        <input id="fClient" required maxlength="200">
+      </div>
+      <div class="field">
+        <label for="fContact">联系人</label>
+        <input id="fContact" maxlength="100">
+      </div>
+      <div class="field">
+        <label for="fPhone">联系方式</label>
+        <input id="fPhone" maxlength="64">
+      </div>
+      <div class="field">
+        <label for="fCreated">创建日期</label>
+        <input type="date" id="fCreated">
+      </div>
+      <div class="field inline">
+        <label class="chk"><input type="checkbox" id="fRise"> 已上升</label>
+        <label class="chk"><input type="checkbox" id="fClosed"> 已闭环</label>
+      </div>
+      <div class="field wide">
+        <label for="fDesc">问题描述 <b>*</b></label>
+        <textarea id="fDesc" rows="4" placeholder="请详细描述问题…" required></textarea>
+      </div>
+      <div class="field wide">
+        <label for="fRecord">处理记录</label>
+        <textarea id="fRecord" rows="7" placeholder="记录处理过程和结果…"></textarea>
+      </div>
+    </div>
+    <p class="err" id="dlgErr" hidden></p>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" data-close>取消</button>
+      <button type="submit" class="btn primary" id="btnSave">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 编辑处理记录 -->
+<dialog id="dlgRecord" class="modal wide">
+  <form method="dialog" id="formRecord">
+    <h2>编辑处理记录</h2>
+    <p class="subtle" id="recTicket"></p>
+    <textarea id="recText" rows="16" placeholder="记录处理过程和结果…"></textarea>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" id="btnCopyRec">复制全部</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" data-close>取消</button>
+      <button type="submit" class="btn primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toasts" id="toasts"></div>
+<script src="app.js"></script>
+</body>
+</html>

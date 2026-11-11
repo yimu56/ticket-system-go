@@ -1,0 +1,12 @@
+# 构建产物
+*.exe
+*.exe~
+# 运行时生成
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.log.1
+# 本地测试
+.smoke/
+node_modules/
